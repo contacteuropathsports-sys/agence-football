@@ -2,13 +2,24 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
-from PIL import Image
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Gestion des imports optionnels
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+except ImportError:
+    pass
 
 # =========================================================
 # 1. CONFIGURATION DE LA PAGE
 # =========================================================
 st.set_page_config(
-    page_title="EuroPath Sports - Official Application",
+    page_title="EuroPath Sports - Official App",
     page_icon="⚽",
     layout="centered"
 )
@@ -18,77 +29,50 @@ st.set_page_config(
 # =========================================================
 st.markdown("""
     <style>
-    /* 1. Fond général en mode Sombre (Dark Blue/Black) */
-    .stApp {
-        background-color: #0E1117;
-        color: #FAFAFA;
-    }
+    /* Fond général */
+    .stApp { background-color: #0E1117; color: #FAFAFA; }
     
-    /* 2. Bouton Envoyer (Bleu Nuit vers Bleu Clair) */
+    /* Boutons */
     div.stButton > button {
-        background-color: #1E40AF; /* Bleu plus vif */
-        color: white;
-        font-size: 18px;
-        font-weight: bold;
-        padding: 10px 24px;
-        border-radius: 8px;
-        width: 100%;
-        border: 1px solid #3B82F6; /* Bordure brillante */
-        box-shadow: 0px 0px 10px rgba(59, 130, 246, 0.5); /* Effet néon */
-        transition: all 0.3s ease;
+        background-color: #1E40AF; color: white; border: 1px solid #3B82F6;
+        box-shadow: 0px 0px 10px rgba(59, 130, 246, 0.5); font-weight: bold;
     }
-    div.stButton > button:hover {
-        background-color: #172554;
-        border-color: #60A5FA;
-        box-shadow: 0px 0px 20px rgba(96, 165, 250, 0.7);
-    }
+    div.stButton > button:hover { background-color: #172554; border-color: #60A5FA; }
     
-    /* 3. Titres */
-    h1 {
-        text-align: center;
-        font-family: 'Helvetica', sans-serif;
-        color: #60A5FA !important; /* Bleu clair pour ressortir sur le noir */
-        text-shadow: 0px 0px 10px rgba(30, 58, 138, 0.8);
-    }
-    h2, h3 {
-        text-align: center;
-        color: #E5E7EB !important; /* Blanc cassé */
-    }
+    /* Titres */
+    h1 { color: #60A5FA !important; text-align: center; }
+    h2, h3 { color: #E5E7EB !important; }
     
-    /* 4. Encadré d'info (Fond sombre aussi) */
+    /* Box Info */
     .info-box {
-        text-align: center; 
-        background-color: #172554; /* Bleu très foncé */
-        padding: 15px; 
-        border-radius: 10px; 
-        border: 1px solid #3B82F6;
-        color: #BFDBFE;
-        margin-bottom: 20px;
+        text-align: center; background-color: #172554; padding: 15px; 
+        border-radius: 10px; border: 1px solid #3B82F6; color: #BFDBFE; margin-bottom: 20px;
     }
     
-    /* 5. Inputs (Champs de texte) */
-    .stTextInput > div > div > input {
-        color: white;
-        background-color: #1F2937;
+    /* Carte Stats (Page Démo) */
+    .metric-card {
+        background-color: #1F2937; border: 1px solid #374151; padding: 20px; 
+        border-radius: 10px; text-align: center;
     }
-    .stSelectbox > div > div > div {
-        color: white;
-        background-color: #1F2937;
-    }
+    .metric-value { font-size: 24px; font-weight: bold; color: #60A5FA; }
+    .metric-label { font-size: 14px; color: #9CA3AF; }
     </style>
 """, unsafe_allow_html=True)
+
 # =========================================================
-# 3. ALGORITHME DE SCORING (Le Cerveau)
+# 3. FONCTIONS UTILITAIRES (Le Cerveau)
 # =========================================================
+
 def calculer_score(age, budget, division, passeport):
     score = 0
-    # 1. Budget (Critère vital)
-    if budget == "Plus de 2500€": score += 40
-    elif budget == "1000€ - 2500€": score += 20
     
-    # 2. Âge (Cœur de cible : 15-19 ans)
-    if 15 <= age <= 19: score += 20
-    elif 12 <= age < 15: score += 15
+    # 1. Budget (Logique CFA/Euro)
+    if "Plus de 2500€" in budget: score += 40
+    elif "1000€ - 2500€" in budget: score += 20
+    
+    # 2. Âge (Cœur de cible : 16-21 ans)
+    if 16 <= age <= 21: score += 20
+    elif 13 <= age < 16: score += 15
     else: score += 5
     
     # 3. Niveau Sportif
@@ -101,146 +85,226 @@ def calculer_score(age, budget, division, passeport):
     
     return score
 
-# =========================================================
-# 4. INTERFACE UTILISATEUR (Frontend)
-# =========================================================
-
-# --- HEADER & LOGO ---
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
-    if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
-    elif os.path.exists("logo.jpg"): st.image("logo.jpg", use_container_width=True)
-    else: st.header("⚽ EuroPath")
-
-st.markdown("<h1>EuroPath Sports</h1>", unsafe_allow_html=True)
-st.markdown("<h3 style='color: #D97706; font-style: italic; margin-top: -15px;'>« Connecting Talent to Opportunity »</h3>", unsafe_allow_html=True)
-
-st.markdown("""
-<div class="info-box">
-    <b>🌍 Campagnes de Recrutement 2026 / Scouting Tour</b><br>
-    🇪🇸 Espagne | 🇹🇷 Turquie | 🇬🇧 Angleterre
-</div>
-""", unsafe_allow_html=True)
-
-# --- FORMULAIRE ---
-st.write("")
-st.subheader("📝 Dossier de Candidature / Application")
-
-with st.form("inscription_form"):
+def create_radar_chart():
+    # Graphique Radar (Demo)
+    categories = ['Vitesse', 'Technique', 'Physique', 'Mental', 'Tactique']
+    values = [85, 70, 60, 90, 75]
+    values += values[:1]
+    angles = np.linspace(0, 2 * np.pi, len(categories), endpoint=False).tolist()
+    angles += angles[:1]
     
-    # Section 1 : Identité
-    st.markdown("#### 👤 Identité & Contact")
-    c1, c2 = st.columns(2)
-    with c1:
-        nom = st.text_input("Nom complet / Full Name")
-        email = st.text_input("Email")
-        nationalite = st.text_input("Nationalité / Nationality")
-    with c2:
-        age = st.number_input("Âge / Age", 10, 35, 17)
-        telephone = st.text_input("WhatsApp (+ Code Pays)")
-        ville = st.text_input("Ville & Pays de résidence")
+    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+    ax.fill(angles, values, color='#1E40AF', alpha=0.25)
+    ax.plot(angles, values, color='#3B82F6', linewidth=2)
+    ax.set_yticklabels([])
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(categories, color='white')
+    fig.patch.set_facecolor('#0E1117')
+    ax.set_facecolor('#1F2937')
+    ax.spines['polar'].set_color('#374151')
+    ax.tick_params(axis='x', colors='white')
+    return fig
 
-    st.divider()
-
-    # Section 2 : Sportif
-    st.markdown("#### ⚽ Profil Sportif / Athletic Profile")
-    c3, c4 = st.columns(2)
-    with c3:
-        poste = st.selectbox("Poste", ["Attaquant (FW)", "Milieu Off. (CAM)", "Milieu Déf. (CDM)", "Défenseur Central (CB)", "Latéral (LB/RB)", "Gardien (GK)"])
-        club_actuel = st.selectbox("Niveau Actuel", ["Académie Pro / D1-D2", "Club Amateur / Régional", "Quartier / Pas de club"])
-    with c4:
-        pied = st.radio("Pied Fort", ["Droit", "Gauche", "Ambidextre"], horizontal=True)
-        video = st.text_input("Lien Vidéo (YouTube/Drive)")
-
-    st.divider()
-
-    # Section 3 : Projet
-    st.markdown("#### 💰 Financement / Funding")
-    st.info("ℹ️ Les frais de voyage et d'académie sont à la charge du joueur. L'agence ne finance pas les essais.")
-    
-    budget = st.selectbox(
-        "Quel est votre budget pour le projet (Voyage + Stage) ?",
-        ["Moins de 500€", "500€ - 1000€", "1000€ - 2500€", "Plus de 2500€"]
-    )
-    passeport = st.radio("Avez-vous un passeport valide ?", ["Oui", "Non"], horizontal=True)
-    
-    st.write("")
-    submitted = st.form_submit_button("Envoyer ma Candidature 🚀")
-
-# =========================================================
-# 5. TRAITEMENT DES DONNÉES (Backend)
-# =========================================================
-if submitted:
-    if nom and telephone and email:
-        # 1. Calcul
-        score_final = calculer_score(age, budget, club_actuel, passeport)
-        statut = "PRIORITAIRE" if score_final >= 70 else "EN ATTENTE"
+def send_email_alert(player_data):
+    try:
+        sender_email = st.secrets["email"]["sender"]
+        sender_password = st.secrets["email"]["password"]
+        receiver_email = "contact.europathsports@gmail.com"
         
-        # 2. Création de l'objet
-        nouvelle_candidature = {
-            "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "Nom": nom,
-            "Email": email,
-            "Telephone": telephone,
-            "Age": age,
-            "Nationalite": nationalite,
-            "Ville": ville,
-            "Poste": poste,
-            "Niveau": club_actuel,
-            "Budget": budget,
-            "Passeport": passeport,
-            "Video": video,
-            "Score_IA": score_final,
-            "Statut": statut
-        }
+        msg = MIMEMultipart()
+        msg['From'] = "EuroPath Bot"
+        msg['To'] = receiver_email
+        msg['Subject'] = f"🔥 PÉPITE : {player_data['Nom']} ({player_data['Score_IA']}/100)"
         
-        # 3. Sauvegarde CSV (Base de données)
+        body = f"Nouveau profil prioritaire !\nNom: {player_data['Nom']}\nVideo: {player_data['Video']}\nBudget: {player_data['Budget']}"
+        msg.attach(MIMEText(body, 'plain'))
+        
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        text = msg.as_string()
+        server.sendmail(sender_email, receiver_email, text)
+        server.quit()
+        return True
+    except Exception:
+        return False
+
+def save_to_google_sheets(data):
+    try:
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds_dict = st.secrets["gcp_service_account"]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        sheet = client.open("EuroPath_DB").sheet1
+        
+        row = [
+            data["Date"], data["Nom"], data["Email"], data["Telephone"], 
+            data["Age"], data["Nationalite"], data["Ville"], data["Poste"], 
+            data["Niveau"], data["Budget"], data["Passeport"], data["Video"], 
+            data["Score_IA"], data["Statut"]
+        ]
+        sheet.append_row(row)
+        return True
+    except Exception:
+        # Fallback CSV si Google Sheets n'est pas configuré
         file_path = "candidatures_db.csv"
-        # On écrit l'en-tête seulement si le fichier n'existe pas
         header_needed = not os.path.exists(file_path)
+        pd.DataFrame([data]).to_csv(file_path, mode='a', header=header_needed, index=False)
+        return False
+
+# =========================================================
+# 4. NAVIGATION (SIDEBAR)
+# =========================================================
+
+# --- LOGO EN HAUT DU MENU ---
+if os.path.exists("logo.png"):
+    st.sidebar.image("logo.png", use_container_width=True)
+elif os.path.exists("logo.jpg"):
+    st.sidebar.image("logo.jpg", use_container_width=True)
+else:
+    # Si pas d'image, on met un titre
+    st.sidebar.markdown("<h1 style='text-align: center; color: #60A5FA;'>EuroPath</h1>", unsafe_allow_html=True)
+
+st.sidebar.write("") # Espace
+
+# --- MENU ---
+menu = st.sidebar.radio("Navigation", ["📝 Candidature (Scouting)", "🏆 Nos Réussites & Démo"])
+
+st.sidebar.markdown("---")
+st.sidebar.info("instagram:\neuropathsports")
+
+# =========================================================
+# PAGE 1 : CANDIDATURE (Formulaire)
+# =========================================================
+if menu == "📝 Candidature (Scouting)":
+    
+    st.markdown("<h1>EuroPath Sports</h1>", unsafe_allow_html=True)
+    st.markdown("<h3 style='color: #D97706; font-style: italic; margin-top: -15px; text-align: center;'>« Connecting Talent to Opportunity »</h3>", unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="info-box">
+        <b>🌍 Campagnes de Recrutement 2026 / Scouting Tour</b><br>
+        🇪🇸 Espagne | 🇹🇷 Turquie | 🇬🇧 Angleterre
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.subheader("Dossier de Candidature")
+
+    with st.form("inscription_form"):
+        st.markdown("#### 👤 Identité & Contact")
+        c1, c2 = st.columns(2)
+        with c1:
+            nom = st.text_input("Nom complet / Full Name")
+            email = st.text_input("Email")
+            nationalite = st.text_input("Nationalité")
+        with c2:
+            age = st.number_input("Âge / Age", 10, 35, 17)
+            telephone = st.text_input("WhatsApp (+ Code Pays)")
+            ville = st.text_input("Ville & Pays")
+
+        st.divider()
+
+        st.markdown("#### ⚽ Profil Sportif")
+        c3, c4 = st.columns(2)
+        with c3:
+            poste = st.selectbox("Poste", ["Attaquant (FW)", "Milieu Off. (CAM)", "Milieu Déf. (CDM)", "Défenseur Central (CB)", "Latéral (LB/RB)", "Gardien (GK)"])
+            club_actuel = st.selectbox("Niveau Actuel", ["Académie Pro / D1-D2", "Club Amateur / Régional", "Quartier / Pas de club"])
+        with c4:
+            pied = st.radio("Pied Fort", ["Droit", "Gauche", "Ambidextre"], horizontal=True)
+            # --- MODIFICATION: VIDEO OPTIONNELLE ---
+            video = st.text_input("Lien Vidéo (YouTube/Veo) - (Facultatif / Optional)")
+
+        st.divider()
+
+        st.markdown("#### Financement")
+        st.warning("ℹ️ Les frais de dossier sont à votre charge")
         
-        try:
-            pd.DataFrame([nouvelle_candidature]).to_csv(file_path, mode='a', header=header_needed, index=False)
+        # --- BUDGET AVEC CFA ---
+        budget_options = [
+            "Moins de 500€ (< 330.000 CFA)", 
+            "500€ - 1000€ (330.000 - 650.000 CFA)", 
+            "1000€ - 2500€ (650.000 - 1.6M CFA)", 
+            "Plus de 2500€ (> 1.6M CFA)"
+        ]
+        
+        budget = st.selectbox("Budget Projet (Voyage + Stage)", budget_options)
+        passeport = st.radio("Passeport valide ?", ["Oui", "Non"], horizontal=True)
+        
+        submitted = st.form_submit_button("Envoyer ma Candidature 🚀")
+
+    if submitted:
+        # --- MODIFICATION: ON NE VERIFIE PLUS LA VIDEO ICI ---
+        if nom and telephone and email:
+            score_final = calculer_score(age, budget, club_actuel, passeport)
+            statut = "PRIORITAIRE 🔥" if score_final >= 70 else "EN ATTENTE"
             
-            # 4. Feedback Utilisateur
-            st.success(f"✅ Merci {nom} ! Votre dossier a été transmis à l'équipe EuroPath.")
+            nouvelle_candidature = {
+                "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "Nom": nom, "Email": email, "Telephone": telephone, "Age": age,
+                "Nationalite": nationalite, "Ville": ville, "Poste": poste,
+                "Niveau": club_actuel, "Budget": budget, "Passeport": passeport,
+                "Video": video if video else "Non fournie", # Gère le cas vide
+                "Score_IA": score_final, "Statut": statut
+            }
+            
+            with st.spinner('Analyse IA et transmission en cours...'):
+                save_to_google_sheets(nouvelle_candidature)
+                if score_final >= 70:
+                    send_email_alert(nouvelle_candidature)
+            
+            st.success(f"✅ Dossier reçu ! Merci {nom}.")
             
             if score_final >= 70:
                 st.balloons()
                 st.markdown(f"""
-                <div style='background-color: #d1fae5; padding: 10px; border-radius: 5px; border: 1px solid #10b981; color: #065f46;'>
-                    🎉 <b>Félicitations !</b> Votre profil a obtenu un <b>Score IA de {score_final}/100</b>.<br>
-                    Vous êtes éligible à un entretien prioritaire. Un agent vous contactera sous 24h.
+                <div style='background-color: #064E3B; padding: 15px; border-radius: 10px; border: 1px solid #10B981; color: #D1FAE5;'>
+                    🌟 <b>PROFIL HAUT POTENTIEL ({score_final}/100)</b><br>
+                    Votre profil est éligible à un entretien prioritaire.
                 </div>
                 """, unsafe_allow_html=True)
             else:
-                st.info("Votre candidature est bien enregistrée dans notre base de talents.")
-                
-        except Exception as e:
-            st.error(f"Erreur technique lors de la sauvegarde : {e}")
-            
-    else:
-        st.error("⚠️ Merci de remplir obligatoirement : Nom, Email et Téléphone.")
+                st.info("Candidature enregistrée. Nous reviendrons vers vous.")
+        else:
+            st.error("⚠️ Champs manquants : Nom, Email et WhatsApp sont obligatoires.")
 
 # =========================================================
-# 6. ZONE ADMIN (Secrète - Pour télécharger les leads)
+# PAGE 2 : DEMO & REUSSITES
 # =========================================================
-st.write("")
-st.write("")
-st.markdown("---")
-
-# Ce bouton permet de récupérer le fichier CSV généré par le site
-if os.path.exists("candidatures_db.csv"):
-    with open("candidatures_db.csv", "rb") as file:
-        st.download_button(
-            label="🔒 Admin: Télécharger la liste des joueurs (.csv)",
-            data=file,
-            file_name="EuroPath_Leads.csv",
-            mime="text/csv"
-        )
+elif menu == "🏆 Nos Réussites & Démo":
+    st.title("Pourquoi choisir EuroPath ?")
+    st.markdown("Nous utilisons la Data pour convaincre les clubs européens.")
+    
+    st.write("")
+    col1, col2, col3 = st.columns(3)
+    col1.markdown("""<div class="metric-card"><div class="metric-value">150+</div><div class="metric-label">Joueurs Analysés</div></div>""", unsafe_allow_html=True)
+    col2.markdown("""<div class="metric-card"><div class="metric-value">5</div><div class="metric-label">Pays Partenaires</div></div>""", unsafe_allow_html=True)
+    col3.markdown("""<div class="metric-card"><div class="metric-value">12</div><div class="metric-label">Signatures Pro</div></div>""", unsafe_allow_html=True)
+    
+    st.divider()
+    st.subheader("📊 Exemple de Rapport EuroPath")
+    d1, d2 = st.columns([1, 1])
+    with d1:
+        st.markdown("**Joueur :** Mamadou D.")
+        st.markdown("**Club Cible :** Valence CF (U19)")
+        st.success("✅ **Points Forts détectés :** Mental d'acier, Endurance.")
+    with d2:
+        fig = create_radar_chart()
+        st.pyplot(fig)
 
 # =========================================================
-# 7. FOOTER
+# ADMIN ZONE
+# =========================================================
+st.sidebar.markdown("---")
+with st.sidebar.expander("🔒 Admin Access"):
+    password = st.text_input("Password", type="password")
+    if password == "Dieuestgrand":
+        st.success("Connecté")
+        if os.path.exists("candidatures_db.csv"):
+            df = pd.read_csv("candidatures_db.csv")
+            st.write(df)
+            st.download_button("Télécharger CSV", df.to_csv(index=False), "leads.csv")
+# =========================================================
+# FOOTER
 # =========================================================
 st.markdown("""
 <div style='text-align: center; color: #6B7280; font-size: 12px; margin-top: 20px;'>

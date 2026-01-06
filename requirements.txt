@@ -1,3 +1,6 @@
 streamlit
 pandas
-Pillow
+gspread
+google-auth
+matplotlib
+numpy
